@@ -1,0 +1,32 @@
+# Environment
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.python-version
+
+.vscode/*
+!.vscode/settings.json
+
+# Embedding caches six from run_1_setup.py
+emb_*.npz
+
+# Trained checkpoints and per-run output
+runs/
+
+# Phase outputs
+rq2_out/
+rq3_out/
+val_out/
+logs/
+
+# Figures rebuild from the JSON
+*.png
+*.pdf
+
+# The FinQA test split
+finqa_test.json
+
+# Derived samples
+finqa_rq3_200.json
+finqa_rq2_pool.json
