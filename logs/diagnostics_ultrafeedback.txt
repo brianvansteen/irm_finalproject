@@ -1,0 +1,32 @@
+﻿transformers 5.16.1 (ModernBERT needs >= 4.48)
+dataset: allenai/ultrafeedback_binarized_cleaned pin f304ce5
+encoder: answerdotai/ModernBERT-base pin 8949b909ec900327062f
+train_prefs: 60829 -> 56875 rows (3954 dropped)
+test_prefs: 1964 -> 1833 rows (131 dropped)
+
+--- diagnostics on 4000 pairs ---
+chosen longer than rejected :  59.7%   <-- label length bias
+mean tokens, chosen         :  462.7
+mean tokens, rejected       :  388.0
+median / p95 / p99 / max    : 350 / 1039 / 1514 / 2336
+
+truncation rate by sequence length:
+    512: 31.35%
+   1024:  5.40%
+   2048:  0.24%  <-- current MAX_LEN
+   4096:  0.00%
+   8192:  0.00%
+pick the smallest sequence length that also covers FinQA (avg 687, max 2,679 + response)
+
+source breakdown:
+  sharegpt                   1287  (32.2%)
+  flan_v2_niv2                985  (24.6%)
+  evol_instruct               632  (15.8%)
+  ultrachat                   615  (15.4%)
+  flan_v2_cot                 175  ( 4.4%)
+  false_qa                    154  ( 3.9%)
+  flan_v2_p3                  114  ( 2.9%)
+  flan_v2_flan2021             38  ( 0.9%)
+
+tokenised: train=56875 // test=1833
+columns: ['prompt', 'score_chosen', 'score_rejected', 'source', 'chosen_text', 'rejected_text', 'input_ids_chosen', 'attention_mask_chosen', 'input_ids_rejected', 'attention_mask_rejected']
