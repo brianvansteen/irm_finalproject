@@ -1,0 +1,24 @@
+environment
+  [OK  ] python                 3.12.6
+  [OK  ] platform               Windows-11-10.0.26200-SP0
+
+torch
+  [OK  ] torch                  2.13.0+cu130
+  [OK  ] cuda build             compiled against CUDA 13.0   <- the '+cuXXX' suffix above is the confirmation
+
+gpu
+  [OK  ] cuda.is_available      True
+  [OK  ] device                 NVIDIA GeForce RTX 4070 Ti SUPER  (1 visible)
+  [OK  ] compute capability     sm_89
+  [OK  ] vram                   16.0 GB
+  [OK  ] bfloat16               hardware support (Ampere or newer)   <- autocast paths will be fast
+  [OK  ] allocation test        passed   <- a real matmul ran on device
+
+libraries
+  [OK  ] transformers           5.16.1
+  [OK  ] datasets               5.0.1
+  [OK  ] numpy                  2.5.2
+  [OK  ] matplotlib             3.11.1
+
+ollama (run 3 only)
+  [OK  ] ollama                 running, 5 model(s)   <- qwen2.5:7b, llama3.1:8b, gemma4:latest
