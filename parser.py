@@ -1,7 +1,7 @@
 """
 FinQA answer parser for the RQ3 best-of-N evaluation.
 
-With FinQA question,take a free-form LLM answer,
+With FinQA question, take a free-form LLM answer,
 pull out the number it is claiming, and
 decide whether it matches FinQA's gold `exe_ans`.
 
@@ -18,7 +18,6 @@ Instruct the generator to end with a line "Answer: <value>".
 The parser falls back to last-number-in-text when the marker is missing
 """
 
-import json
 import re
 from collections import Counter
 from dataclasses import dataclass, asdict
@@ -41,9 +40,9 @@ MAGNITUDE_FACTORS = (1e3, 1e6, 1e9)
 
 # answer formatting, in order of priority
 ANSWER_MARKERS = [
-    r"(?:final\s+)?answer\s*(?:is)?\s*[:\-]\s*(.+?)(?:\n|$)",
-    r"\*\*answer\*\*\s*[:\-]?\s*(.+?)(?:\n|$)",
-    r"the\s+answer\s+is\s+(.+?)(?:\n|\.|$)",
+    re.compile(r"(?:final\s+)?answer\s*(?:is)?\s*[:\-]\s*(.+?)(?:\n|$)"),
+    re.compile(r"\*\*answer\*\*\s*[:\-]?\s*(.+?)(?:\n|$)"),
+    re.compile(r"the\s+answer\s+is\s+(.+?)(?:\n|\.|$)"),
 ]
 
 # $ 1,234.56 | (123) | 45.6% | -12 | 1.2
@@ -125,7 +124,7 @@ def extract(text: str) -> tuple[float | None, bool, str]:
 
     # answer formatting markers, in order of priority
     for pat in ANSWER_MARKERS:
-        m = re.search(pat, low, re.IGNORECASE)
+        m = pat.search(low)
         if m:
             tail = m.group(1) # the text after the marker, which may contain a number
             nums = _numbers_in(tail) # convert all numbers in the tail to floats
@@ -144,6 +143,29 @@ def extract(text: str) -> tuple[float | None, bool, str]:
         return None, False, "yesno"
 
     return None, False, "none"
+
+def _yesno_in(text: str) -> str | None:
+    """Last standalone yes/no in `text`, lowercased, or None."""
+    found = YES_NO_RE.findall(text)
+    return found[-1].lower() if found else None
+
+
+def extract_yesno(text: str) -> tuple[str | None, str]:
+    """
+    yes/no counterpart of extract(): an explicit Answer-marker line beats
+    trailing prose. Returns (said, how) with how in 'marker'|'last'|'none'.
+    """
+    if not text or not text.strip():
+        return None, "none"
+    low = text.lower()
+    for pat in ANSWER_MARKERS:
+        m = re.search(pat, low)
+        if m:
+            said = _yesno_in(m.group(1))
+            if said:
+                return said, "marker"
+    said = _yesno_in(text)
+    return (said, "last") if said else (None, "none")
 
 
 # ---------------------------------------------------main grading function
@@ -169,8 +191,7 @@ def grade(
 
     # --- yes/no items -----------------------------------------------------
     if isinstance(gold, str) and gold.strip().lower() in {"yes", "no"}:
-        m = YES_NO_RE.search(response or "")
-        said = m.group(1).lower() if m else None
+        said, _ = extract_yesno(response or "")
         return Grade(
             correct=(said == gold.strip().lower()),
             match_type="yesno" if said else "no_number",
@@ -260,6 +281,9 @@ if __name__ == "__main__":
         ("Answer: yes", "yes", True, "yesno"),
         ("Answer: no", "yes", False, "yesno"),
         ("Answer: 0", 0.0, True, "exact"),
+
+        # yes/no: marker beats a stray yes/no in the prose (regression for extract_yesno)
+        ("No change was needed. Answer: yes", "yes", True, "yesno")
     ]
 
     # collect grades for all cases, report fails, and check extraction-priority
