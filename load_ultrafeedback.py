@@ -34,7 +34,6 @@ ENCODER = "answerdotai/ModernBERT-base"
 # to 8192 (#39)", 2025-01-15. Repo effectively dormant since.
 # Requires transformers >= 4.48 (ModernBERT architecture added in v4.48.0).
 ENCODER_REVISION = "8949b909ec900327062f0ebf497f51aef5e6f0c8"
-# ENCODER_REVISION = "890363e1dc0f82175ed809ed6635d549acd1f1f9"
 
 # RQ1 ablation conditions (encoder, max_len):
 #   ("distilbert-base-uncased",     512)
@@ -94,11 +93,11 @@ def is_usable(row):
     return True
 
 
-def load_prefs(split, revision=REVISION, drop_ties=True):
+def load_prefs(split, revision=REVISION, filter_unusable=True):
     ds = load_dataset(DATASET, split=split, revision=revision)
     before = len(ds)
     ds = ds.map(extract_pair, remove_columns=ds.column_names)
-    if drop_ties:
+    if filter_unusable:
         ds = ds.filter(is_usable)
     print(f"{split}: {before} -> {len(ds)} rows ({before - len(ds)} dropped)")
     return ds
@@ -115,14 +114,9 @@ def make_tokenize_fn(tokenizer, max_len=MAX_LEN):
     """
 
     def fn(batch):
-        chosen = tokenizer(
-            batch["prompt"], batch["chosen_text"],
-            truncation=True, max_length=max_len, padding=False,
-        )
-        rejected = tokenizer(
-            batch["prompt"], batch["rejected_text"],
-            truncation=True, max_length=max_len, padding=False,
-        )
+        kw = dict(truncation=True, max_length=max_len, padding=False)
+        chosen = tokenizer(batch["prompt"], batch["chosen_text"], **kw)
+        rejected = tokenizer(batch["prompt"], batch["rejected_text"], **kw)
         return {
             "input_ids_chosen": chosen["input_ids"],
             "attention_mask_chosen": chosen["attention_mask"],
@@ -148,33 +142,37 @@ def diagnostics(ds, tokenizer, sample=4000):
     n = min(sample, len(ds))
     sub = ds.select(range(n))
 
-    longer = 0
-    lens_c, lens_r = [], []
 
-    for row in sub:
-        tc = tokenizer(row["prompt"], row["chosen_text"], truncation=False)["input_ids"]
-        tr = tokenizer(row["prompt"], row["rejected_text"], truncation=False)["input_ids"]
-        lens_c.append(len(tc))
-        lens_r.append(len(tr))
-        if len(tc) > len(tr):
-            longer += 1
+    # HuggingFace's tokenizer can batch, so do that for speed.
+    # `sub returns a Dataset, not a list of dicts, so can pass the whole batch to tokenizer.
+    # tokenizer written in Rust so this is faster than a Python loop.
+    enc_c = tokenizer(sub["prompt"], sub["chosen_text"], truncation=False)["input_ids"]
+    enc_r = tokenizer(sub["prompt"], sub["rejected_text"], truncation=False)["input_ids"]
+    lens_c = [len(x) for x in enc_c] # list comprehension for chosen column of lengths
+    lens_r = [len(x) for x in enc_r] # list comprehension for rejected column of lengths
+    longer = sum(c > r for c, r in zip(lens_c, lens_r)) # count of cases where chosen is longer than rejected
 
-    alllens = sorted(lens_c + lens_r)
-    m = len(alllens)
+
+    all_lens = sorted(lens_c + lens_r)
+    m = len(all_lens)
+    def pct(p):
+        return all_lens[min(int(m * p), m - 1)]
 
     print(f"\n--- diagnostics on {n} pairs ---")
     print(f"chosen longer than rejected : {longer / n:6.1%}   <-- label length bias")
     print(f"mean tokens, chosen         : {sum(lens_c) / n:6.1f}")
     print(f"mean tokens, rejected       : {sum(lens_r) / n:6.1f}")
-    print(f"median / p95 / p99 / max    : {alllens[m//2]} / {alllens[int(m*.95)]} "
-          f"/ {alllens[int(m*.99)]} / {alllens[-1]}")
+    print(f"median / p95 / p99 / max    : {pct(.5)} / {pct(.95)} "
+          f"/ {pct(.99)} / {all_lens[-1]}")
+
 
     # Truncation at each candidate sequence length, so MAX_LEN is chosen from evidence.
     # Compare against `finqa_prompt.py stats` before fixing.
     # One value has to serve UltraFeedback training AND FinQA scoring.
     print("\ntruncation rate by sequence length:")
     for w in (512, 1024, 2048, 4096, 8192):
-        rate = sum(1 for L in alllens if L > w) / m
+        # rate = sum(1 for L in alllens if L > w) / m
+        rate = sum(L > w for L in all_lens) / m
         flag = "  <-- current MAX_LEN" if w == MAX_LEN else ""
         print(f"  {w:5d}: {rate:6.2%}{flag}")
     print("pick the smallest sequence length that also covers FinQA "
